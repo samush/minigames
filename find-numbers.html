@@ -71,6 +71,19 @@
         <option value="joke">шутка</option>
       </select>
     </label>
+    <label>Режим игры
+      <select id="mode">
+        <option value="standard" selected>стандарт</option>
+        <option value="strict">одна ошибка</option>
+        <option value="adaptive">адаптивный</option>
+      </select>
+    </label>
+    <label>Траектория
+      <select id="traj">
+        <option value="rings" selected>кольца</option>
+        <option value="chaos">хаос</option>
+      </select>
+    </label>
   </details>
   <div id="overlay"><div class="msg"></div><div class="stats"></div><button id="again">Ещё раз</button></div>
 
@@ -85,6 +98,10 @@ const statsEl = overlay.querySelector('.stats');
 const speedInput = document.getElementById('speed');
 const dimFound = document.getElementById('dimFound');
 const effectSel = document.getElementById('effect');
+const modeSel = document.getElementById('mode');
+const trajSel = document.getElementById('traj');
+
+const INSULTS = ['Лох!', 'Чмо!', 'Хрен!', 'Мозила!', 'Пипка!'];
 
 const RING_COUNTS = [6, 9, 12, 13];          // numbers per ring, inner to outer
 const ROUND_SECONDS = 60;
@@ -95,6 +112,7 @@ ctx.scale(devicePixelRatio, devicePixelRatio);
 
 let rings = [];        // {radius, dir, speed, offset, flipAt, items:[{n, angle, found}]}
 let running = false;
+let chaos = false;      // trajectory captured at round start
 let target = 1;
 let errors = 0;
 let effects = [];   // {x, y, ok, t0, mode}
@@ -130,9 +148,28 @@ function setupRound() {
   errors = 0;
   effects = [];
   targetEl.textContent = '1';
+  chaos = trajSel.value === 'chaos';
+  if (chaos) {
+    for (const ring of rings) {
+      for (const item of ring.items) {
+        const p = itemPos(ring, item);
+        item.x = p.x; item.y = p.y;
+        item.h = Math.random() * Math.PI * 2;        // heading
+        item.v = 25 + Math.random() * 20;            // px/s before multiplier
+      }
+    }
+  }
+}
+
+function speedMult() {
+  // adaptive: ramps with each found number; slider ignored
+  return modeSel.value === 'adaptive'
+    ? 0.4 + (target - 1) * 0.13
+    : parseFloat(speedInput.value);
 }
 
 function itemPos(ring, item) {
+  if (chaos && item.x !== undefined) return {x: item.x, y: item.y};
   const a = item.angle + ring.offset;
   return {
     x: SIZE / 2 + ring.radius * Math.cos(a),
@@ -158,7 +195,10 @@ function draw() {
 const EFFECT_MS = 700;
 function addEffect(x, y, ok) {
   if (effectSel.value === 'none') return;
-  effects.push({x, y, ok, t0: performance.now(), mode: effectSel.value});
+  effects.push({
+    x, y, ok, t0: performance.now(), mode: effectSel.value,
+    text: ok ? 'Ок!' : INSULTS[Math.floor(Math.random() * INSULTS.length)]
+  });
 }
 
 function drawEffects() {
@@ -176,7 +216,7 @@ function drawEffects() {
     } else {
       ctx.fillStyle = f.ok ? '#5dd39e' : '#ff6b6b';
       ctx.font = '700 ' + Math.round(SIZE / 14) + 'px "Comic Sans MS", "Comic Neue", cursive';
-      ctx.fillText(f.ok ? 'Ок!' : 'Лох!', f.x, f.y - 14 - k * 24);
+      ctx.fillText(f.text, f.x, f.y - 14 - k * 24);
       ctx.font = '600 ' + Math.round(SIZE / 24) + 'px system-ui, sans-serif';
     }
     ctx.globalAlpha = 1;
@@ -186,13 +226,27 @@ function drawEffects() {
 function frame(t) {
   if (running) {
     const dt = Math.min((t - lastT) / 1000, 0.1);
-    const mult = parseFloat(speedInput.value);
-    for (const ring of rings) {
-      if (t >= ring.flipAt) {
-        ring.dir *= -1;
-        ring.flipAt = t + 5000 + Math.random() * 3000;
+    const mult = speedMult();
+    if (chaos) {
+      const cx = SIZE / 2, maxR = SIZE / 2 - 28;
+      for (const ring of rings) {
+        for (const item of ring.items) {
+          item.h += (Math.random() - 0.5) * 2 * dt;   // gas-particle wander
+          item.x += Math.cos(item.h) * item.v * mult * dt;
+          item.y += Math.sin(item.h) * item.v * mult * dt;
+          if ((item.x - cx) ** 2 + (item.y - cx) ** 2 > maxR ** 2) {
+            item.h = Math.atan2(cx - item.y, cx - item.x) + (Math.random() - 0.5);
+          }
+        }
       }
-      ring.offset += ring.dir * ring.speed * mult * dt;
+    } else {
+      for (const ring of rings) {
+        if (t >= ring.flipAt) {
+          ring.dir *= -1;
+          ring.flipAt = t + 5000 + Math.random() * 3000;
+        }
+        ring.offset += ring.dir * ring.speed * mult * dt;
+      }
     }
     const left = Math.max(0, (endsAt - t) / 1000);
     timerEl.textContent = Math.floor(left / 60) + ':' + String(Math.ceil(left % 60) % 60).padStart(2, '0');
@@ -249,6 +303,7 @@ canvas.addEventListener('pointerdown', e => {
   } else {
     errors++;
     addEffect(x, y, false);
+    if (modeSel.value === 'strict') finish(false);
   }
 });
 
