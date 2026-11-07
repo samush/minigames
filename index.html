@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Мини-игры</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: #0d1220; color: #e8ecf5;
+    font-family: system-ui, sans-serif;
+  }
+  h1 { font-weight: 600; letter-spacing: .04em; }
+  .catalog {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 280px));
+    gap: 20px; padding: 20px; justify-content: center;
+  }
+  .card {
+    display: block; padding: 24px; border-radius: 16px;
+    background: #171f33; border: 1px solid #2a3a55;
+    text-decoration: none; color: inherit;
+    transition: transform .15s, border-color .15s;
+  }
+  .card:hover { transform: translateY(-3px); border-color: #4f7cff; }
+  .card h2 { margin: 0 0 8px; font-size: 1.2rem; color: #7ea2ff; }
+  .card p { margin: 0; font-size: .9rem; color: #9aa7c0; line-height: 1.4; }
+</style>
+</head>
+<body>
+  <h1>Мини-игры</h1>
+  <div class="catalog">
+    <a class="card" href="find-numbers.html">
+      <h2>Найди числа</h2>
+      <p>Числа от 1 до 40 вращаются по кольцам. Найди их все по порядку за одну минуту. Тренирует внимание и рабочую память.</p>
+    </a>
+  </div>
+</body>
+</html>
