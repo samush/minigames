@@ -36,6 +36,16 @@
   }
   #overlay.show { display: flex; }
   #overlay .msg { font-size: 1.6rem; font-weight: 600; }
+  #overlay .stats { font-size: 1.1rem; color: #9aa7c0; line-height: 1.6; }
+  #overlay .stats b { color: #e8ecf5; }
+  details.settings {
+    width: 100%; max-width: 420px; box-sizing: border-box;
+    margin: 4px 16px 24px; padding: 12px 16px;
+    background: #171f33; border: 1px solid #2a3a55; border-radius: 12px;
+  }
+  details.settings summary { cursor: pointer; color: #7ea2ff; font-size: .95rem; }
+  details.settings label { margin-top: 12px; }
+  select { font: inherit; background: #0d1220; color: #e8ecf5; border: 1px solid #2a3a55; border-radius: 8px; padding: 4px 8px; }
 </style>
 </head>
 <body>
@@ -51,7 +61,18 @@
       <input type="range" id="speed" min="0.2" max="2.5" step="0.1" value="1">
     </label>
   </div>
-  <div id="overlay"><div class="msg"></div><button id="again">Ещё раз</button></div>
+  <details class="settings">
+    <summary>Настройки</summary>
+    <label><input type="checkbox" id="dimFound" checked> Гасить найденные числа</label>
+    <label>Эффект при нажатии
+      <select id="effect">
+        <option value="none">нет</option>
+        <option value="ring" selected>да</option>
+        <option value="joke">шутка</option>
+      </select>
+    </label>
+  </details>
+  <div id="overlay"><div class="msg"></div><div class="stats"></div><button id="again">Ещё раз</button></div>
 
 <script>
 const canvas = document.getElementById('c');
@@ -60,7 +81,10 @@ const timerEl = document.getElementById('timer');
 const targetEl = document.getElementById('target').querySelector('b');
 const overlay = document.getElementById('overlay');
 const msgEl = overlay.querySelector('.msg');
+const statsEl = overlay.querySelector('.stats');
 const speedInput = document.getElementById('speed');
+const dimFound = document.getElementById('dimFound');
+const effectSel = document.getElementById('effect');
 
 const RING_COUNTS = [6, 9, 12, 13];          // numbers per ring, inner to outer
 const ROUND_SECONDS = 60;
@@ -72,6 +96,8 @@ ctx.scale(devicePixelRatio, devicePixelRatio);
 let rings = [];        // {radius, dir, speed, offset, flipAt, items:[{n, angle, found}]}
 let running = false;
 let target = 1;
+let errors = 0;
+let effects = [];   // {x, y, ok, t0, mode}
 let endsAt = 0;
 let lastT = 0;
 
@@ -101,6 +127,8 @@ function setupRound() {
     };
   });
   target = 1;
+  errors = 0;
+  effects = [];
   targetEl.textContent = '1';
 }
 
@@ -120,9 +148,38 @@ function draw() {
   for (const ring of rings) {
     for (const item of ring.items) {
       const p = itemPos(ring, item);
-      ctx.fillStyle = item.found ? '#2c3a2f' : '#e8ecf5';
+      ctx.fillStyle = item.found && dimFound.checked ? '#2c3a2f' : '#e8ecf5';
       ctx.fillText(item.n, p.x, p.y);
     }
+  }
+  drawEffects();
+}
+
+const EFFECT_MS = 700;
+function addEffect(x, y, ok) {
+  if (effectSel.value === 'none') return;
+  effects.push({x, y, ok, t0: performance.now(), mode: effectSel.value});
+}
+
+function drawEffects() {
+  const now = performance.now();
+  effects = effects.filter(f => now - f.t0 < EFFECT_MS);
+  for (const f of effects) {
+    const k = (now - f.t0) / EFFECT_MS;   // 0 → 1
+    ctx.globalAlpha = 1 - k;
+    if (f.mode === 'ring') {
+      ctx.strokeStyle = f.ok ? '#5dd39e' : '#ff6b6b';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(f.x, f.y, 10 + k * 30, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = f.ok ? '#5dd39e' : '#ff6b6b';
+      ctx.font = '700 ' + Math.round(SIZE / 14) + 'px "Comic Sans MS", "Comic Neue", cursive';
+      ctx.fillText(f.ok ? 'Ок!' : 'Лох!', f.x, f.y - 14 - k * 24);
+      ctx.font = '600 ' + Math.round(SIZE / 24) + 'px system-ui, sans-serif';
+    }
+    ctx.globalAlpha = 1;
   }
 }
 
@@ -146,11 +203,18 @@ function frame(t) {
   requestAnimationFrame(frame);
 }
 
+function rating(n) {
+  return n < 10 ? 'малыш' : n < 15 ? 'додик' : n < 20 ? 'первоклашка'
+    : n < 25 ? 'нормис' : n < 30 ? 'крутяк' : n < 35 ? 'могуч' : 'папаня';
+}
+
 function finish(won) {
   running = false;
-  msgEl.textContent = won
-    ? 'Все 40 найдены! 🎉'
-    : 'Время вышло. Дошёл до ' + (target - 1) + ' из 40.';
+  const found = target - 1;
+  msgEl.textContent = won ? 'Все 40 найдены! 🎉' : 'Время вышло.';
+  statsEl.innerHTML = 'Нашёл: <b>' + found + '</b> из 40<br>'
+    + 'Ошибок: <b>' + errors + '</b><br>'
+    + 'Оценка: <b>' + rating(found) + '</b>';
   overlay.classList.add('show');
 }
 
@@ -166,17 +230,25 @@ canvas.addEventListener('pointerdown', e => {
   const rect = canvas.getBoundingClientRect();
   const x = e.clientX - rect.left, y = e.clientY - rect.top;
   const hitR = SIZE / 24 + 8;
+  let best = null, bestD = hitR ** 2;
   for (const ring of rings) {
     for (const item of ring.items) {
-      if (item.found || item.n !== target) continue;
+      if (item.found) continue;
       const p = itemPos(ring, item);
-      if ((p.x - x) ** 2 + (p.y - y) ** 2 < hitR ** 2) {
-        item.found = true;
-        target++;
-        if (target > 40) finish(true);
-        else targetEl.textContent = target;
-      }
+      const d = (p.x - x) ** 2 + (p.y - y) ** 2;
+      if (d < bestD) { best = item; bestD = d; }
     }
+  }
+  if (!best) return;
+  if (best.n === target) {
+    best.found = true;
+    addEffect(x, y, true);
+    target++;
+    if (target > 40) finish(true);
+    else targetEl.textContent = target;
+  } else {
+    errors++;
+    addEffect(x, y, false);
   }
 });
 
