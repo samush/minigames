@@ -228,14 +228,37 @@ function frame(t) {
     const dt = Math.min((t - lastT) / 1000, 0.1);
     const mult = speedMult();
     if (chaos) {
-      const cx = SIZE / 2, maxR = SIZE / 2 - 28;
-      for (const ring of rings) {
-        for (const item of ring.items) {
-          item.h += (Math.random() - 0.5) * 2 * dt;   // gas-particle wander
-          item.x += Math.cos(item.h) * item.v * mult * dt;
-          item.y += Math.sin(item.h) * item.v * mult * dt;
-          if ((item.x - cx) ** 2 + (item.y - cx) ** 2 > maxR ** 2) {
-            item.h = Math.atan2(cx - item.y, cx - item.x) + (Math.random() - 0.5);
+      const cx = SIZE / 2, maxR = SIZE / 2 - 28, r = SIZE / 28;
+      const all = rings.flatMap(ring => ring.items);
+      for (const item of all) {
+        item.h += (Math.random() - 0.5) * 1.2 * dt;   // slight gas-particle wander
+        item.x += Math.cos(item.h) * item.v * mult * dt;
+        item.y += Math.sin(item.h) * item.v * mult * dt;
+        // bounce off circular boundary: reflect heading about the outward normal
+        const dx = item.x - cx, dy = item.y - cx;
+        const dist = Math.hypot(dx, dy);
+        if (dist > maxR) {
+          const nx = dx / dist, ny = dy / dist;
+          const vx = Math.cos(item.h), vy = Math.sin(item.h);
+          const dot = vx * nx + vy * ny;
+          if (dot > 0) item.h = Math.atan2(vy - 2 * dot * ny, vx - 2 * dot * nx);
+          item.x = cx + nx * maxR;
+          item.y = cx + ny * maxR;
+        }
+      }
+      // ponytail: O(n^2) pair check, fine for 40 items
+      for (let i = 0; i < all.length; i++) {
+        for (let j = i + 1; j < all.length; j++) {
+          const a = all[i], b = all[j];
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const d = Math.hypot(dx, dy);
+          if (d < 2 * r && d > 0.001) {
+            const push = (2 * r - d) / 2;
+            const nx = dx / d, ny = dy / d;
+            a.x -= nx * push; a.y -= ny * push;
+            b.x += nx * push; b.y += ny * push;
+            a.h = Math.atan2(-ny, -nx) + (Math.random() - 0.5) * 0.3;
+            b.h = Math.atan2(ny, nx) + (Math.random() - 0.5) * 0.3;
           }
         }
       }
